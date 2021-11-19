@@ -33,7 +33,7 @@ from bot.helper.mirror_utils.status_utils.split_status import SplitStatus
 from bot.helper.mirror_utils.status_utils.upload_status import UploadStatus
 from bot.helper.mirror_utils.status_utils.tg_upload_status import TgUploadStatus
 from bot.helper.mirror_utils.status_utils.gdownload_status import DownloadStatus
-from bot.helper.mirror_utils.upload_utils import gdriveTools, pyrogramEngine
+from bot.helper.mirror_utils.upload_utils import gdriveTools, pyrogramEngine, mytelUp
 from bot.helper.telegram_helper.bot_commands import BotCommands
 from bot.helper.telegram_helper.filters import CustomFilters
 from bot.helper.telegram_helper.message_utils import *
@@ -44,13 +44,14 @@ ariaDlManager.start_listener()
 
 
 class MirrorListener(listeners.MirrorListeners):
-    def __init__(self, bot, update, pswd, isTar=False, extract=False, isZip=False, isQbit=False, isLeech=False):
+    def __init__(self, bot, update, pswd, isTar=False, extract=False, isZip=False, isQbit=False, isLeech=False, isMytel=False):
         super().__init__(bot, update)
         self.isTar = isTar
         self.extract = extract
         self.isZip = isZip
         self.isQbit = isQbit
         self.isLeech = isLeech
+        self.isMytel = isMytel
         self.pswd = pswd
 
     def onDownloadStarted(self):
@@ -147,6 +148,7 @@ class MirrorListener(listeners.MirrorListeners):
         up_name = pathlib.PurePath(path).name
         up_path = f'{DOWNLOAD_DIR}{self.uid}/{up_name}'
         size = fs_utils.get_path_size(up_path)
+        # Leech to telegram
         if self.isLeech:
             checked = False
             for dirpath, subdir, files in os.walk(f'{DOWNLOAD_DIR}{self.uid}', topdown=False):
@@ -168,7 +170,32 @@ class MirrorListener(listeners.MirrorListeners):
                 download_dict[self.uid] = tg_upload_status
             update_all_messages()
             tg.upload()
+        elif self.isMytel:
+            # Mytel upload
+            checked = False
+            for dirpath, subdir, files in os.walk(f'{DOWNLOAD_DIR}{self.uid}', topdown=False):
+                for file in files:
+                    f_path = os.path.join(dirpath, file)
+                    f_size = os.path.getsize(f_path)
+                    # 140 MB
+                    if int(f_size) > 146800640:
+                        if not checked:
+                            checked = True
+                            with download_dict_lock:
+                                download_dict[self.uid] = SplitStatus(up_name, up_path, size)
+                            LOGGER.info(f"Splitting: {up_name}")
+                            # 100MB
+                        fs_utils.split(f_path, f_size, file, dirpath, 104857600)
+                        os.remove(f_path)
+            LOGGER.info(f"MytelUp Name: {up_name}")            
+            mytel = mytelUp.MytelUploader(up_name, self)
+            # mytel_upload_status = TgUploadStatus(mytel, size, gid, self)
+            # with download_dict_lock:
+            #     download_dict[self.uid] = mytel_upload_status
+            update_all_messages()
+            mytel.upload()
         else:
+        # Google upload
             LOGGER.info(f"Upload Name: {up_name}")
             drive = gdriveTools.GoogleDriveHelper(up_name, self)
             upload_status = UploadStatus(drive, size, gid, self)
@@ -511,6 +538,9 @@ def qb_unzip_leech(update, context):
 def qb_zip_leech(update, context):
     _mirror(context.bot, update, True, isZip=True, isQbit=True, isLeech=True)
 
+def mytel_leech(update, context):
+    _mirror(context.bot, update, isMytel=True)
+
 mirror_handler = CommandHandler(BotCommands.MirrorCommand, mirror,
                                 filters=CustomFilters.authorized_chat | CustomFilters.authorized_user, run_async=True)
 tar_mirror_handler = CommandHandler(BotCommands.TarMirrorCommand, tar_mirror,
@@ -543,6 +573,8 @@ qb_unzip_leech_handler = CommandHandler(BotCommands.QbUnzipLeechCommand, qb_unzi
                                 filters=CustomFilters.authorized_chat | CustomFilters.authorized_user, run_async=True)
 qb_zip_leech_handler = CommandHandler(BotCommands.QbZipLeechCommand, qb_zip_leech,
                                 filters=CustomFilters.authorized_chat | CustomFilters.authorized_user, run_async=True)
+mytel_leech_handler = CommandHandler(BotCommands.MytelCommand, mytel_leech,
+                                filters=CustomFilters.authorized_chat | CustomFilters.authorized_user, run_async=True)                            
 dispatcher.add_handler(mirror_handler)
 dispatcher.add_handler(tar_mirror_handler)
 dispatcher.add_handler(unzip_mirror_handler)
@@ -559,3 +591,4 @@ dispatcher.add_handler(qb_leech_handler)
 dispatcher.add_handler(qb_tar_leech_handler)
 dispatcher.add_handler(qb_unzip_leech_handler)
 dispatcher.add_handler(qb_zip_leech_handler)
+dispatcher.add_handler(mytel_leech_handler)
