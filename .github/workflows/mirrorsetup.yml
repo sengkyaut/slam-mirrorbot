@@ -1,0 +1,22 @@
+name: Mirror Setup
+
+on:
+  workflow_dispatch:
+    inputs:
+      gdriveid:
+        description: 'Your google drive folder id'
+        required: true
+
+jobs:
+  build:
+    name: Setting up Bot Environment
+    runs-on: ubuntu-latest
+    steps:
+      - name: Preparing Source Code
+        uses: actions/checkout@v2
+      - name: Preparing gdrive folder
+        run: echo GDRIVE_FOLDER_ID = ${{ github.event.inputs.gdriveid }} >> config.env
+      - name: Building Bot
+        run: docker build . -t m
+      - name: Bot will be running for 6 hours. Join t.me/drivetalk for any question
+        run: docker run m
