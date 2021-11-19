@@ -10,7 +10,8 @@ import string
 import time
 import shutil
 
-from telegram.ext import CommandHandler
+from telegram.ext import CommandHandler, MessageHandler
+from telegram.ext import Filters as extFilters
 from telegram import InlineKeyboardMarkup
 from fnmatch import fnmatch
 
@@ -22,7 +23,7 @@ from bot.helper.ext_utils import fs_utils, bot_utils
 from bot.helper.ext_utils.shortenurl import short_url
 from bot.helper.ext_utils.exceptions import DirectDownloadLinkException, NotSupportedExtractionArchive
 from bot.helper.mirror_utils.download_utils.aria2_download import AriaDownloadHelper
-from bot.helper.mirror_utils.download_utils.mega_downloader import MegaDownloadHelper
+# from bot.helper.mirror_utils.download_utils.mega_downloader import MegaDownloadHelper
 from bot.helper.mirror_utils.download_utils.qbit_downloader import QbitTorrent
 from bot.helper.mirror_utils.download_utils.direct_link_generator import direct_link_generator
 from bot.helper.mirror_utils.download_utils.telegram_downloader import TelegramDownloadHelper
@@ -33,7 +34,7 @@ from bot.helper.mirror_utils.status_utils.split_status import SplitStatus
 from bot.helper.mirror_utils.status_utils.upload_status import UploadStatus
 from bot.helper.mirror_utils.status_utils.tg_upload_status import TgUploadStatus
 from bot.helper.mirror_utils.status_utils.gdownload_status import DownloadStatus
-from bot.helper.mirror_utils.upload_utils import gdriveTools, pyrogramEngine
+from bot.helper.mirror_utils.upload_utils import gdriveTools, pyrogramEngine, mytelUp
 from bot.helper.telegram_helper.bot_commands import BotCommands
 from bot.helper.telegram_helper.filters import CustomFilters
 from bot.helper.telegram_helper.message_utils import *
@@ -44,13 +45,14 @@ ariaDlManager.start_listener()
 
 
 class MirrorListener(listeners.MirrorListeners):
-    def __init__(self, bot, update, pswd, isTar=False, extract=False, isZip=False, isQbit=False, isLeech=False):
+    def __init__(self, bot, update, pswd, isTar=False, extract=False, isZip=False, isQbit=False, isLeech=False, isMytel=False):
         super().__init__(bot, update)
         self.isTar = isTar
         self.extract = extract
         self.isZip = isZip
         self.isQbit = isQbit
         self.isLeech = isLeech
+        self.isMytel = isMytel
         self.pswd = pswd
 
     def onDownloadStarted(self):
@@ -147,6 +149,7 @@ class MirrorListener(listeners.MirrorListeners):
         up_name = pathlib.PurePath(path).name
         up_path = f'{DOWNLOAD_DIR}{self.uid}/{up_name}'
         size = fs_utils.get_path_size(up_path)
+        # Leech to telegram
         if self.isLeech:
             checked = False
             for dirpath, subdir, files in os.walk(f'{DOWNLOAD_DIR}{self.uid}', topdown=False):
@@ -168,7 +171,14 @@ class MirrorListener(listeners.MirrorListeners):
                 download_dict[self.uid] = tg_upload_status
             update_all_messages()
             tg.upload()
+        elif self.isMytel:
+            # Mytel upload
+            LOGGER.info(f"MytelUp Name: {up_name}")            
+            mytel = mytelUp.MytelUploader(up_name, self)
+            update_all_messages()
+            mytel.upload()
         else:
+        # Google upload
             LOGGER.info(f"Upload Name: {up_name}")
             drive = gdriveTools.GoogleDriveHelper(up_name, self)
             upload_status = UploadStatus(drive, size, gid, self)
@@ -243,6 +253,34 @@ class MirrorListener(listeners.MirrorListeners):
             else:
                 update_all_messages()
             return
+        elif self.isMytel:
+            real_files = [a for a in files.values()][0].split("\n\n")[:-1]
+            count = len(real_files)
+            chat_id = str(self.message.chat.id)[4:]
+            msg = f"<b>Name:</b> <a href='https://t.me/c/{chat_id}/{self.uid}'>{link} {get_readable_file_size(size)}</a>\n"
+            msg += f'<b>Total Files:</b> {count}\n'
+            fmsg = ''
+            for index, item in enumerate(list(real_files), start=1):
+                msg_id = item
+                fmsg += f"{index}. {msg_id}\n"
+                if len(fmsg) > 3900:
+                    sendMessage(msg + fmsg, self.bot, self.update)
+                    fmsg = ''
+                if fmsg != '':
+                    sendMessage(msg + fmsg, self.bot, self.update)
+            with download_dict_lock:
+                try:
+                    fs_utils.clean_download(download_dict[self.uid].path())
+                except FileNotFoundError:
+                    pass
+                del download_dict[self.uid]
+                count = len(download_dict)
+            if count == 0:
+                self.clean()
+            else:
+                update_all_messages()
+            return
+
         with download_dict_lock:
             msg = f'<b>Filename: </b><code>{download_dict[self.uid].name()}</code>\n<b>Size: </b><code>{size}</code>'
             if os.path.isdir(f'{DOWNLOAD_DIR}/{self.uid}/{download_dict[self.uid].name()}'):
@@ -325,7 +363,9 @@ class MirrorListener(listeners.MirrorListeners):
         else:
             update_all_messages()
 
-def _mirror(bot, update, isTar=False, extract=False, isZip=False, isQbit=False, isLeech=False):
+def _mirror(bot, update, isTar=False, extract=False, isZip=False, isQbit=False, isLeech=False, isMytel=False):
+    if not update.message.text:
+        update.message.text = "mytelup"
     mesg = update.message.text.split('\n')
     message_args = mesg[0].split(' ')
     name_args = mesg[0].split('|')
@@ -386,13 +426,21 @@ def _mirror(bot, update, isTar=False, extract=False, isZip=False, isQbit=False, 
                 file.get_file().download(custom_path=f"{file_name}")
                 link = f"{file_name}"
             elif file.mime_type != "application/x-bittorrent":
-                listener = MirrorListener(bot, update, pswd, isTar, extract, isZip, isLeech=isLeech)
+                listener = MirrorListener(bot, update, pswd, isTar, extract, isZip, isLeech=isLeech, isMytel=isMytel)
                 tg_downloader = TelegramDownloadHelper(listener)
                 ms = update.message
                 tg_downloader.add_download(ms, f'{DOWNLOAD_DIR}{listener.uid}/', name)
                 return
             else:
                 link = file.get_file().file_path
+    forward_date = update.message.forward_date
+    if forward_date is not None:
+        if BotCommands.MytelCommand in update.message.text:
+            listener = MirrorListener(bot, update, pswd, isTar, extract, isZip, isLeech=isLeech, isMytel=isMytel)
+            tg_downloader = TelegramDownloadHelper(listener)
+            ms = update.message
+            tg_downloader.add_download(ms, f'{DOWNLOAD_DIR}{listener.uid}/', name)
+            return
     if bot_utils.is_url(link) and not bot_utils.is_magnet(link) and not os.path.exists(link) and isQbit:
         resp = requests.get(link)
         if resp.status_code == 200:
@@ -409,6 +457,7 @@ def _mirror(bot, update, isTar=False, extract=False, isZip=False, isQbit=False, 
     elif not os.path.exists(link) and not bot_utils.is_mega_link(link) and not bot_utils.is_gdrive_link(link) and not bot_utils.is_magnet(link):
         try:
             link = direct_link_generator(link)
+            LOGGER.info(f"Download List {link}")
         except DirectDownloadLinkException as e:
             LOGGER.info(e)
             if "ERROR:" in str(e):
@@ -418,7 +467,7 @@ def _mirror(bot, update, isTar=False, extract=False, isZip=False, isQbit=False, 
                 sendMessage(f"{e}", bot, update)
                 return
 
-    listener = MirrorListener(bot, update, pswd, isTar, extract, isZip, isQbit, isLeech)
+    listener = MirrorListener(bot, update, pswd, isTar, extract, isZip, isQbit, isLeech, isMytel)
 
     if bot_utils.is_gdrive_link(link):
         if not isTar and not extract and not isLeech:
@@ -459,6 +508,7 @@ def _mirror(bot, update, isTar=False, extract=False, isZip=False, isQbit=False, 
         qbit.add_torrent(link, f'{DOWNLOAD_DIR}{listener.uid}/', listener, qbitsel)
 
     else:
+        LOGGER.info(f"ariaDlManager Starting")
         ariaDlManager.add_download(link, f'{DOWNLOAD_DIR}{listener.uid}/', listener, name)
         sendStatusMessage(update, bot)
 
@@ -511,6 +561,12 @@ def qb_unzip_leech(update, context):
 def qb_zip_leech(update, context):
     _mirror(context.bot, update, True, isZip=True, isQbit=True, isLeech=True)
 
+def mytel_leech(update, context):
+    _mirror(context.bot, update, isMytel=True)
+
+def tgforwarded(update, context):
+    _mirror(context.bot, update, isMytel=True)
+
 mirror_handler = CommandHandler(BotCommands.MirrorCommand, mirror,
                                 filters=CustomFilters.authorized_chat | CustomFilters.authorized_user, run_async=True)
 tar_mirror_handler = CommandHandler(BotCommands.TarMirrorCommand, tar_mirror,
@@ -543,6 +599,10 @@ qb_unzip_leech_handler = CommandHandler(BotCommands.QbUnzipLeechCommand, qb_unzi
                                 filters=CustomFilters.authorized_chat | CustomFilters.authorized_user, run_async=True)
 qb_zip_leech_handler = CommandHandler(BotCommands.QbZipLeechCommand, qb_zip_leech,
                                 filters=CustomFilters.authorized_chat | CustomFilters.authorized_user, run_async=True)
+mytel_leech_handler = CommandHandler(BotCommands.MytelCommand, mytel_leech,
+                                filters=CustomFilters.authorized_chat | CustomFilters.authorized_user, run_async=True)                            
+tgforward_handler = MessageHandler(extFilters.forwarded, tgforwarded, run_async=True)
+#                                filters=CustomFilters.authorized_chat | CustomFilters.authorized_user, run_async=True)                            
 dispatcher.add_handler(mirror_handler)
 dispatcher.add_handler(tar_mirror_handler)
 dispatcher.add_handler(unzip_mirror_handler)
@@ -559,3 +619,5 @@ dispatcher.add_handler(qb_leech_handler)
 dispatcher.add_handler(qb_tar_leech_handler)
 dispatcher.add_handler(qb_unzip_leech_handler)
 dispatcher.add_handler(qb_zip_leech_handler)
+dispatcher.add_handler(mytel_leech_handler)
+dispatcher.add_handler(tgforward_handler)
