@@ -91,6 +91,10 @@ def direct_link_generator(link: str):
         return fichier(link)
     elif 'solidfiles.com' in link:
         return solidfiles(link)
+    elif 'tubesb.com' in link:
+        return sbembed(link)
+    elif 'embedsb.com' in link:
+        return sbembed(link)        
     else:
         raise DirectDownloadLinkException(f'No Direct link function found for {link}')
 
