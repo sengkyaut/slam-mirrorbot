@@ -81,7 +81,8 @@ class TelegramDownloadHelper(DownloadHelper):
             self.__onDownloadError('Internal error occurred')
 
     def add_download(self, message, path, filename):
-        _message = self._bot.get_messages(message.chat.id, reply_to_message_ids=message.message_id)
+        # _message = self._bot.get_messages(message.chat.id, reply_to_message_ids=message.message_id)
+        _message = message
         media = None
         media_array = [_message.document, _message.video, _message.audio]
         for i in media_array:
@@ -109,7 +110,7 @@ class TelegramDownloadHelper(DownloadHelper):
                 sendStatusMessage(self.__listener.update, self.__listener.bot)
                 self.__onDownloadStart(name, media.file_size, media.file_id)
                 LOGGER.info(f'Downloading Telegram file with id: {media.file_id}')
-                threading.Thread(target=self.__download, args=(_message, path)).start()
+                threading.Thread(target=self.__download, args=(media.file_id, path)).start()
             else:
                 self.__onDownloadError('File already being downloaded!')
         else:

@@ -10,7 +10,8 @@ import string
 import time
 import shutil
 
-from telegram.ext import CommandHandler
+from telegram.ext import CommandHandler, MessageHandler
+from telegram.ext import Filters as extFilters
 from telegram import InlineKeyboardMarkup
 from fnmatch import fnmatch
 
@@ -362,6 +363,8 @@ class MirrorListener(listeners.MirrorListeners):
             update_all_messages()
 
 def _mirror(bot, update, isTar=False, extract=False, isZip=False, isQbit=False, isLeech=False, isMytel=False):
+    if not update.message.text:
+        update.message.text = "mytelup"
     mesg = update.message.text.split('\n')
     message_args = mesg[0].split(' ')
     name_args = mesg[0].split('|')
@@ -429,6 +432,14 @@ def _mirror(bot, update, isTar=False, extract=False, isZip=False, isQbit=False, 
                 return
             else:
                 link = file.get_file().file_path
+    forward_date = update.message.forward_date
+    if forward_date is not None:
+        if BotCommands.MytelCommand in update.message.text:
+            listener = MirrorListener(bot, update, pswd, isTar, extract, isZip, isLeech=isLeech, isMytel=isMytel)
+            tg_downloader = TelegramDownloadHelper(listener)
+            ms = update.message
+            tg_downloader.add_download(ms, f'{DOWNLOAD_DIR}{listener.uid}/', name)
+            return
     if bot_utils.is_url(link) and not bot_utils.is_magnet(link) and not os.path.exists(link) and isQbit:
         resp = requests.get(link)
         if resp.status_code == 200:
@@ -552,6 +563,9 @@ def qb_zip_leech(update, context):
 def mytel_leech(update, context):
     _mirror(context.bot, update, isMytel=True)
 
+def tgforwarded(update, context):
+    _mirror(context.bot, update, isMytel=True)
+
 mirror_handler = CommandHandler(BotCommands.MirrorCommand, mirror,
                                 filters=CustomFilters.authorized_chat | CustomFilters.authorized_user, run_async=True)
 tar_mirror_handler = CommandHandler(BotCommands.TarMirrorCommand, tar_mirror,
@@ -586,6 +600,8 @@ qb_zip_leech_handler = CommandHandler(BotCommands.QbZipLeechCommand, qb_zip_leec
                                 filters=CustomFilters.authorized_chat | CustomFilters.authorized_user, run_async=True)
 mytel_leech_handler = CommandHandler(BotCommands.MytelCommand, mytel_leech,
                                 filters=CustomFilters.authorized_chat | CustomFilters.authorized_user, run_async=True)                            
+tgforward_handler = MessageHandler(extFilters.forwarded, tgforwarded, run_async=True)
+#                                filters=CustomFilters.authorized_chat | CustomFilters.authorized_user, run_async=True)                            
 dispatcher.add_handler(mirror_handler)
 dispatcher.add_handler(tar_mirror_handler)
 dispatcher.add_handler(unzip_mirror_handler)
@@ -603,3 +619,4 @@ dispatcher.add_handler(qb_tar_leech_handler)
 dispatcher.add_handler(qb_unzip_leech_handler)
 dispatcher.add_handler(qb_zip_leech_handler)
 dispatcher.add_handler(mytel_leech_handler)
+dispatcher.add_handler(tgforward_handler)
