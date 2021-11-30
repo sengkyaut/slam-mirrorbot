@@ -73,7 +73,7 @@ class MytelUploader:
                 resp = resp.json()
             LOGGER.info(resp['fileName'])
             LOGGER.info(resp['url'])
-            self.single_msg = f"{resp['fileName']}\n{resp['url']}\n"
+            self.single_msg = f"{resp['fileName']}\n{resp['url']}\n\n"
 
             if not self.is_cancelled:
                 os.remove(up_path)
