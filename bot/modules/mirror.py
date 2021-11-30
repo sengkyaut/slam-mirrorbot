@@ -254,13 +254,14 @@ class MirrorListener(listeners.MirrorListeners):
                 update_all_messages()
             return
         elif self.isMytel:
-            count = len(files)
+            real_files = files[item].split("\n\n")
+            count = len(real_file)
             chat_id = str(self.message.chat.id)[4:]
             msg = f"<b>Name:</b> <a href='https://t.me/c/{chat_id}/{self.uid}'>{link} {get_readable_file_size(size)}</a>\n"
             msg += f'<b>Total Files:</b> {count}\n'
             fmsg = ''
-            for index, item in enumerate(list(files), start=1):
-                msg_id = files[item]
+            for index, item in enumerate(list(real_files), start=1):
+                msg_id = item
                 fmsg += f"{index}. {msg_id}\n"
                 if len(fmsg) > 3900:
                     sendMessage(msg + fmsg, self.bot, self.update)
