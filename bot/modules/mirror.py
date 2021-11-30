@@ -255,7 +255,7 @@ class MirrorListener(listeners.MirrorListeners):
             return
         elif self.isMytel:
             real_files = files[link].split("\n\n")
-            count = len(real_file)
+            count = len(real_files)
             chat_id = str(self.message.chat.id)[4:]
             msg = f"<b>Name:</b> <a href='https://t.me/c/{chat_id}/{self.uid}'>{link} {get_readable_file_size(size)}</a>\n"
             msg += f'<b>Total Files:</b> {count}\n'
