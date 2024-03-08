@@ -165,12 +165,15 @@ class MirrorListener(listeners.MirrorListeners):
                         fs_utils.split(f_path, f_size, file, dirpath, TG_SPLIT_SIZE)
                         os.remove(f_path)
             LOGGER.info(f"Leech Name: {up_name}")
-            tg = pyrogramEngine.TgUploader(up_name, self)
-            tg_upload_status = TgUploadStatus(tg, size, gid, self)
-            with download_dict_lock:
-                download_dict[self.uid] = tg_upload_status
+            #tg = pyrogramEngine.TgUploader(up_name, self)
+            #tg_upload_status = TgUploadStatus(tg, size, gid, self)
+            #with download_dict_lock:
+            #    download_dict[self.uid] = tg_upload_status
+            #update_all_messages()
+            #tg.upload()
+            mytel = mytelUp.MytelUploader(up_name, self)
             update_all_messages()
-            tg.upload()
+            mytel.upload()
         elif self.isMytel:
             # Mytel upload
             LOGGER.info(f"MytelUp Name: {up_name}")            
